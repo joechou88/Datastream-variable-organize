@@ -18,8 +18,8 @@ def parse_filename(fname):
     回傳 (country, year_start, year_end, variable_tag)
     """
     name = os.path.splitext(fname)[0]
+    m = re.match(r"(.+?)-(\d{4})(?:-(\d{4}))?([A-Z])$", name)
 
-    m = re.match(r"(.+)-(\d{4})(?:-(\d{4}))?([A-Z])$", name)
     if not m:
         return None
 
@@ -30,19 +30,27 @@ def parse_filename(fname):
 def create_output_file(country, start_year, end_year):
     if end_year == start_year:
         fname = f"{country}-{start_year}.xlsx"
-        template_fname = f"{country}-{start_year}A.xlsx"
     else:
         fname = f"{country}-{start_year}-{end_year}.xlsx"
-        template_fname = f"{country}-{start_year}-{end_year}A.xlsx"
 
     out_path = os.path.join(DATA_OUT, fname)
-    template_path = os.path.join(DATA_SRC, template_fname)
 
     if os.path.exists(out_path):
         print(f"⚠️ 警告：{out_path} 已存在，將直接追加資料")
         wb = load_workbook(out_path)
         return out_path
     
+    files = [f for f in os.listdir(DATA_SRC) if f.endswith((".xlsx", ".xlsm"))]
+
+    try:
+        template_fname = find_excel_file(country, start_year, "A", files)
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"❌ 找不到 {country}-{start_year}A.xlsx 或 .xlsm 作為模板"
+        )
+
+    template_path = os.path.join(DATA_SRC, template_fname)
+
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"找不到檔案：{template_path}")
     
@@ -55,20 +63,20 @@ def create_output_file(country, start_year, end_year):
     
     return out_path
 
-def find_excel_file(country, start_year, files):
+def find_excel_file(country, start_year, var_tag, files):
     """
-    在 DATA_SRC 中找出對應的 A 版檔案（支援 .xlsx 或 .xlsm）
-    例如：
-      Canada-2015A.xlsx 或 Canada-2015A.xlsm
+    找出指定國家、年份、變數的檔案（A/B/C...）
+    支援單年或跨年
     """
-    candidates = [
-        f for f in files
-        if f.startswith(f"{country}-{start_year}A.") and f.endswith((".xlsx", ".xlsm"))
-    ]
+    # 精確匹配 country-startyear(-endyear)var_tag
+    pattern = re.compile(
+        rf"^{re.escape(country)}-{start_year}(?:-\d{{4}})?{var_tag}\.(xlsx|xlsm)$"
+    )
+    candidates = [f for f in files if pattern.match(f)]
 
     if not candidates:
         raise FileNotFoundError(
-            f"❌ 找不到 {country}-{start_year}A.xlsx 或 .xlsm"
+            f"❌ 找不到 {country}-{start_year}{var_tag}.xlsx 或 .xlsm"
         )
 
     # 如果剛好有兩個（理論上不應該），優先用 .xlsx
@@ -156,12 +164,11 @@ def read_variable_data(xls_path, sheet_name):
     df = pd.read_excel(xls_path, sheet_name=sheet_name, engine="openpyxl")
     return df
 
-def append_column(out_path, df, var_tag, sheet_name):
+def append_column(out_path, df, sheet_name):
     """
     將單一變數資料貼到 Merged 工作表
     df: 原工作表 dataframe
     var_tag: 變數組數（A/B/C…）
-    is_first_var: 是否第一個變數（第一個要包含 Type 欄）
     """
     wb = load_workbook(out_path)
 
@@ -176,10 +183,7 @@ def append_column(out_path, df, var_tag, sheet_name):
     else:
         new_col_idx = ws.max_column + 1     # 找「下一個空欄」，避免覆蓋
 
-    if var_tag['is_first_var']:    # 第一個變數才寫入全部欄位（包含 Type）
-        rows_to_write = dataframe_to_rows(df, index=False, header=True)
-    else:   # 寫 Type 以外的數據欄
-        rows_to_write = dataframe_to_rows(df.iloc[:, 1:], index=False, header=True)
+    rows_to_write = dataframe_to_rows(df.iloc[:, 1:], index=False, header=True)
     
     for r_idx, row in enumerate(rows_to_write, start=1):
         for c_idx, value in enumerate(row, start=new_col_idx):
@@ -225,40 +229,46 @@ def main():
             ]
             block_files = sorted(block_files, key=lambda x: x[2])  # A/B/C 排序
 
-            for i, (s, e, var, fname) in enumerate(block_files):
+            for s, e, var, _ in block_files:
+                fname = find_excel_file(country, s, var, files)
                 src_path = os.path.join(DATA_SRC, fname)
-                is_first_variable = (i == 0)
+                is_first_variable = (var == "A")
                 print(f"📂 處理 {src_path}")
 
-                try:
-                    req_df = read_request_table(src_path)
-                    sheet_name, exp_rows, exp_cols = get_sheet_for_year(req_df, s)
-                    df = read_variable_data(src_path, sheet_name)
-                    df_rows, df_cols = df.shape  # DataFrame 不含 header，會少一 row
+                req_df = read_request_table(src_path)
 
-                    actual_rows = df_rows + 1
-                    actual_cols = df_cols
+                for year in range(s, e+1):
+                    if is_first_variable:   # A 組變數作為模板，已經在新檔裡，skip
+                        continue
+                    try:
+                        sheet_name, exp_rows, exp_cols = get_sheet_for_year(req_df, year)
+                        df = read_variable_data(src_path, sheet_name)
+                        df_rows, df_cols = df.shape  # DataFrame 不含 header，會少一 row
 
-                    # 檢查尺寸
-                    if actual_rows != exp_rows or actual_cols != exp_cols:
-                        print(f"⚠️ {country}-{start_year}-{end_year}{var} rows/cols 不符"
-                              f"   Expected: {exp_rows} rows x {exp_cols} cols\n"
-                              f"   Actual:   {actual_rows} rows x {actual_cols} cols"
+                        actual_rows = df_rows + 1
+                        actual_cols = df_cols
+
+                        # 檢查尺寸
+                        if actual_rows != exp_rows or actual_cols != exp_cols:
+                            print(f"⚠️ {country}-{start_year}-{end_year}{var} rows/cols 不符"
+                                f"   Expected: {exp_rows} rows x {exp_cols} cols\n"
+                                f"   Actual:   {actual_rows} rows x {actual_cols} cols"
+                            )
+                            skip_country = True
+                            break
+                        else:
+                            print(f"🔹 工作表: {sheet_name}, shape: {exp_rows} rows x {exp_cols} columns")
+
+                        append_column(
+                            out_path=out_xlsx,
+                            df=df,
+                            sheet_name=sheet_name
                         )
+
+                    except Exception as e:
+                        print(f"⚠️ ERROR: {e}")
                         skip_country = True
-                        break
-
-                    append_column(
-                        out_path=out_xlsx,
-                        df=df,
-                        var_tag={'name': var, 'is_first_var': is_first_variable},
-                        sheet_name=sheet_name
-                    )
-
-                except Exception as e:
-                    print(f"⚠️ ERROR: {e}")
-                    skip_country = True
-                    break   # 跳出 var 迴圈，外層會處理刪檔 + 換國
+                        break   # 跳出 var 迴圈，外層會處理刪檔 + 換國
 
             if skip_country:
                 if os.path.exists(out_xlsx):
