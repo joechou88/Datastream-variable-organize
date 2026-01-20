@@ -1,4 +1,4 @@
-## Data Usage Notice
+## 下載 Workspace（原 Datastream）需知
 
 下載 Workspace（原 Datastream）後，請**避免手動編輯 Excel 內容**。若直接修改儲存格，可能會殘留不可見的空白字元，進而導致程式執行錯誤。  
 下載完成後，請將 Excel 檔案存放至：
