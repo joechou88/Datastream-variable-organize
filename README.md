@@ -1,6 +1,11 @@
 ## Workspace（原 Datastream）下載 Excel 須知
 
-下載 Workspace（原 Datastream）後，請**避免手動編輯 Excel 內容**。若直接修改儲存格，可能會殘留不可見的空白字元，進而導致程式執行錯誤。  
+用 Excel 下載 Workspace（原 Datastream）的教學，請參考：
+
+由於 Workspace（原 Datastream）有下載限制，無法一次輸出多國多年資料，甚至有些變數太多的國家同一年也沒辦法一次載下來，所以需要分段下載後，再利用本工具做資料整合。
+
+下載 Workspace（原 Datastream）後，請**避免手動編輯 Excel 內容**。若直接修改儲存格，可能會殘留不可見的空白字元，進而導致程式執行錯誤。 
+
 下載完成後，請將 Excel 檔案存放至：
 
 - 分年 + 分變數：`./data-split-by-variable`
@@ -10,7 +15,7 @@
 
 ## 程式執行流程
 
-本專案的資料整合流程如下：
+本工具的資料整合流程如下：
 
 1. **同一國家多個變數合併（`variable-integrate.py`）**  
    `./data-split-by-variable → ./data`
