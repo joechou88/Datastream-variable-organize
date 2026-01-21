@@ -1,6 +1,7 @@
 # 先忽略「所有 Excel」
 *.xlsx
 *.xlsm
+*.csv
 processed_log.txt
 
 # 例外：允許根目錄的 country-code.xlsx 被追蹤
