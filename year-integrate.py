@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 import re
 from collections import defaultdict
 from openpyxl import load_workbook, Workbook
@@ -30,9 +31,17 @@ for f in os.listdir(SRC_DIR):
     if f.lower().endswith((".xlsm", ".xlsx")):
         country_files[parse_country(f)].append(f)
 
+# ---- 讀 country code 對照表 ----
+code_df = pd.read_excel(os.path.join(BASE_DIR, "country-code.xlsx"))
+code_df["Country_name"] = code_df["Country_name"].str.strip()
+
+country_code_map = code_df.set_index("Country_name").to_dict(orient="index")
+
 # ========= 主流程 =========
 for country, files in country_files.items():
     print(f"\nProcessing {country}...")
+
+    display_country = country.replace("-", " ") # 取得 COUNTRY 欄
 
     records = []            # 暫存 某個國家 各年度的資料
     header = None
@@ -132,16 +141,30 @@ for country, files in country_files.items():
         print(f"  ⚠ {country} 無有效資料，略過")
         continue
 
+    # ---- 加 COUNTRY / COUNTRY_CODE / COUNTRY_CODE2 ----
+    code_info = country_code_map.get(display_country, {"Contry_code": "", "Country_code2": ""})
+    country_code = code_info.get("Contry_code", "")
+    country_code2 = code_info.get("Country_code2", "")
+
+    # 調整 header，把三欄插到 YEAR 之後
+    new_header = header[:1] + ["COUNTRY", "COUNTRY_CODE", "COUNTRY_CODE2"] + header[1:]
+
+    # 調整每筆資料
+    new_records = []
+    for row in records:
+        new_row = row[:1] + [display_country, country_code, country_code2] + row[1:]
+        new_records.append(new_row)
+
     # ---- 依年份升冪排序 ----
-    records.sort(key=lambda x: x[0])
+    new_records.sort(key=lambda x: x[0])
 
     # ---- 輸出主控表 ----
     out_wb = Workbook()
     out_ws = out_wb.active
     out_ws.title = "MASTER_TABLE"
 
-    out_ws.append(header)
-    for r in records:
+    out_ws.append(new_header)
+    for r in new_records:
         out_ws.append(r)
 
     out_path = os.path.join(
@@ -149,6 +172,6 @@ for country, files in country_files.items():
     )
     out_wb.save(out_path)
 
-    print(f"  ✔ 輸出完成: {out_path}，共 {len(records)} 筆資料")
+    print(f"  ✔ 輸出完成: {out_path}，共 {len(new_records)} 筆資料")
 
 print("=== 全部國家彙整完成 ===")
