@@ -66,6 +66,8 @@ for filename in all_files:
     
     try:
         df = pd.read_excel(filename)
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]  # 去掉多餘的空白欄
+        print(f"{file_basename}: {len(df.columns)} 欄")
         
         # 寫入 CSV (存放在外面那一層，避免汙染資料夾)
         file_exists = os.path.isfile(output_csv_path)
