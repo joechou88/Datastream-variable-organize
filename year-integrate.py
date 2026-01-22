@@ -14,6 +14,23 @@ END_YEAR = 2024
 
 os.makedirs(OUT_DIR, exist_ok=True)
 
+def parse_years_from_filename(filename):
+    """
+    從檔名擷取合法年份集合
+    Denmark-2014.xlsx -> {2014}
+    Denmark-2015-2017A.xlsm -> {2015, 2016, 2017}
+    """
+    name = os.path.splitext(filename)[0]
+
+    m = re.search(r"-(\d{4})(?:-(\d{4}))?", name)
+    if not m:
+        return set()
+
+    start = int(m.group(1))
+    end = int(m.group(2)) if m.group(2) else start
+
+    return set(range(start, end + 1))
+
 def parse_country(filename):
     """從檔名擷取國家名稱"""
     name = os.path.splitext(filename)[0]
@@ -63,6 +80,8 @@ for country, files in country_files.items():
 
         # REQUEST_TABLE 從第 7 列一直往下讀，讀到空白就停
         while True:
+            file_years = parse_years_from_filename(fname)
+
             year = req_ws[f"G{row}"].value
             ref = req_ws[f"K{row}"].value
 
@@ -70,6 +89,16 @@ for country, files in country_files.items():
                 break
 
             year = int(year)
+
+            # ====== 檔名 vs REQUEST_TABLE 年份檢查 ======
+            if year not in file_years:
+                print(
+                    f"❌ 年份不一致｜檔名: {fname} "
+                    f"| REQUEST_TABLE 年份: {year} "
+                    f"| 檔名年份: {sorted(file_years)} → 已跳過"
+                )
+                row += 1
+                continue
 
             if START_YEAR <= year <= END_YEAR:
                 sheet_name = extract_sheet_name(ref)
