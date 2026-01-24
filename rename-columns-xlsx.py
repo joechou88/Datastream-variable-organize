@@ -3,17 +3,6 @@ import re
 import os
 
 input_file = "all-countries.xlsx"
-output_file = "all-countries-renamed.xlsx"
-
-# ========= 檢查檔案是否存在 =========
-if os.path.exists(output_file):
-    ans = input(f"檔案 '{output_file}' 已存在，是否刪除並生成新檔？(y/n): ").strip().lower()
-    if ans != 'y':
-        print("取消操作，程式結束。")
-        exit()
-    else:
-        os.remove(output_file)
-        print(f"已刪除舊檔 '{output_file}'。")
 
 wb = openpyxl.load_workbook(input_file)
 ws = wb.active  # 假設只改第一個工作表
@@ -52,6 +41,29 @@ for col_cell in ws[1]:
     if old_value != new_value:
         col_cell.value = new_value
         print(f"{old_value} → {new_value}")
+
+# ========= 計算國家數量 =========
+# 國家欄在第二欄（B列），且從第2列開始
+countries = set()
+for row in ws.iter_rows(min_row=2, min_col=2, max_col=2):
+    val = row[0].value
+    if val:
+        countries.add(val)
+
+num_countries = len(countries)
+
+# ========= 自動生成輸出檔名 =========
+output_file = f"{num_countries}countries.xlsx"
+
+# ========= 檢查檔案是否存在 =========
+if os.path.exists(output_file):
+    ans = input(f"檔案 '{output_file}' 已存在，是否刪除並生成新檔？(y/n): ").strip().lower()
+    if ans != 'y':
+        print("取消操作，程式結束。")
+        exit()
+    else:
+        os.remove(output_file)
+        print(f"已刪除舊檔 '{output_file}'。")
 
 # ========= 儲存新檔案 =========
 wb.save(output_file)

@@ -28,7 +28,7 @@
 
 4. **重新命名欄位**  
    1. `rename-columns-csv.py`: `./all-countries.csv → ./all-countries-renamed.csv`  
-   2. `rename-columns-xlsx.py`: `./all-countries.xlsx → ./all-countries-renamed.xlsx`
+   2. `rename-columns-xlsx.py`: `./all-countries.xlsx → ./{國家數量}countries.xlsx`
 
 ---
 
