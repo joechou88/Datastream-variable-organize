@@ -1,8 +1,8 @@
-## Workspace（原 Datastream）下載 Excel 須知
+## Worldspace（原 Datastream）下載 Excel 須知
 
-用 Excel 下載 Workspace（原 Datastream）的教學，請參考：[Workspace(原Datastream) Data Collection SOP](https://drive.google.com/file/d/1gW6l87DrgSTm3RZfPdKsc6xqmHRGRZBR/view?usp=drive_link)
+用 Excel 下載 Worldspace（原 Datastream）的教學，請參考：[Worldspace(原Datastream) Data Collection SOP](https://drive.google.com/file/d/1gW6l87DrgSTm3RZfPdKsc6xqmHRGRZBR/view?usp=drive_link)
 
-由於 Workspace（原 Datastream）有下載限制，無法一次輸出多國多年資料，甚至有些變數太多的國家同一年也沒辦法一次載下來，所以需要分段下載後，再利用本工具做資料整合。
+由於 Worldspace（原 Datastream）有下載限制，無法一次輸出多國多年資料，甚至有些變數太多的國家同一年也沒辦法一次載下來，所以需要分段下載後，再利用本工具做資料整合。
 
 下載完成後，請**避免手動編輯 Excel 內容**。若直接修改儲存格，可能會殘留不可見的空白字元，進而導致程式執行錯誤。 
 
@@ -68,6 +68,6 @@
 
 ## 維護注意事項
 
-1. 下載 Workspace（原 Datastream）時，要確保每個國家各年度的變數，最後併起來應一致
+1. 下載 Worldspace（原 Datastream）時，要確保每個國家各年度的變數，最後併起來應一致
 
 2. 【分年 + 分變數】（存放於 `./data-split-by-variable`）合併時，沒有更新 REQUEST_TABLE N 欄的 Rows 數、P 欄的 Total 數，後面的開發者如果要拿這兩欄的值去做其他事，務必要先更新
