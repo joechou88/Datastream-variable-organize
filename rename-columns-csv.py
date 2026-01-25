@@ -1,9 +1,41 @@
 import pandas as pd
 import re
 import os
+import glob
 
-input_file = "all-countries.csv"
-output_file = "all-countries-renamed.csv"
+# ========= 自動抓資料夾裡 all- 開頭的 csv，但排除 -renamed  =========
+csv_files = [f for f in glob.glob("all-*.csv") if "-renamed" not in f]  # 抓所有以 all- 開頭的 csv
+if not csv_files:
+    print("找不到 all- 開頭的 csv 檔案")
+    exit()
+
+# ========= 如果找到多個檔案，列出給使用者選 =========
+if len(csv_files) > 1:
+    print("找到多個符合條件的 csv 檔案：")
+    for i, f in enumerate(csv_files, 1):
+        print(f"{i}. {f}")
+    while True:
+        choice = input(f"請輸入要處理的檔案的國家數量: ").strip()
+        matched_files = [f for f in csv_files if re.search(rf"all-{choice}countries\.csv", f)]
+        if matched_files:
+            original_file = matched_files[0]
+            break
+        print("找不到符合條件的檔案，請重新輸入")
+else:
+    original_file = csv_files[0]
+
+print(f"你選擇的檔案是: {original_file}")
+
+# 去掉副檔名
+base_name = os.path.splitext(os.path.basename(original_file))[0]
+
+# 抓 all- 後面的部分
+m = re.match(r"all-(.+)", base_name)
+country_count = m.group(1) if m else "all"
+
+# 自動生成 input / output 檔名
+input_file = original_file  # 直接用找到的檔名
+output_file = f"all-{country_count}-renamed.csv"
 
 # ========= 檢查檔案是否存在 =========
 if os.path.exists(output_file):

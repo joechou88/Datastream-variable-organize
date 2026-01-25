@@ -1,8 +1,52 @@
-import openpyxl
 import re
 import os
+import openpyxl
+import glob
 
-input_file = "all-countries.xlsx"
+# ========= 自動抓資料夾裡 all- 開頭的 xlsx，但排除 -renamed  =========
+xlsx_files = [f for f in glob.glob("all-*.xlsx") if "-renamed" not in f]  # 抓所有以 all- 開頭的 xlsx
+if not xlsx_files:
+    print("找不到 all- 開頭的 xlsx 檔案")
+    exit()
+
+# ========= 如果找到多個檔案，列出給使用者選 =========
+if len(xlsx_files) > 1:
+    print("找到多個符合條件的 xlsx 檔案：")
+    for i, f in enumerate(xlsx_files, 1):
+        print(f"{i}. {f}")
+    while True:
+        choice = input(f"請輸入要處理的檔案的國家數量: ").strip()
+        matched_files = [f for f in xlsx_files if re.search(rf"all-{choice}countries\.xlsx", f)]
+        if matched_files:
+            original_file = matched_files[0]
+            break
+        print("找不到符合條件的檔案，請重新輸入")
+else:
+    original_file = xlsx_files[0]
+
+print(f"你選擇的檔案是: {original_file}")
+
+# 去掉副檔名
+base_name = os.path.splitext(os.path.basename(original_file))[0]
+
+# 抓 all- 後面的部分
+m = re.match(r"all-(.+)", base_name)
+country_count = m.group(1) if m else "all"
+
+# 自動生成 input / output 檔名
+input_file = original_file  # 直接用找到的檔名
+output_file = f"all-{country_count}-renamed.xlsx"
+
+# ========= 檢查檔案是否存在 =========
+if os.path.exists(output_file):
+    ans = input(f"檔案 '{output_file}' 已存在，是否刪除並生成新檔？(y/n): ").strip().lower()
+    if ans != 'y':
+        print("取消操作，程式結束。")
+        exit()
+    else:
+        os.remove(output_file)
+        print(f"已刪除舊檔 '{output_file}'。")
+
 
 wb = openpyxl.load_workbook(input_file)
 ws = wb.active  # 假設只改第一個工作表
@@ -41,29 +85,6 @@ for col_cell in ws[1]:
     if old_value != new_value:
         col_cell.value = new_value
         print(f"{old_value} → {new_value}")
-
-# ========= 計算國家數量 =========
-# 國家欄在第二欄（B列），且從第2列開始
-countries = set()
-for row in ws.iter_rows(min_row=2, min_col=2, max_col=2):
-    val = row[0].value
-    if val:
-        countries.add(val)
-
-num_countries = len(countries)
-
-# ========= 自動生成輸出檔名 =========
-output_file = f"{num_countries}countries.xlsx"
-
-# ========= 檢查檔案是否存在 =========
-if os.path.exists(output_file):
-    ans = input(f"檔案 '{output_file}' 已存在，是否刪除並生成新檔？(y/n): ").strip().lower()
-    if ans != 'y':
-        print("取消操作，程式結束。")
-        exit()
-    else:
-        os.remove(output_file)
-        print(f"已刪除舊檔 '{output_file}'。")
 
 # ========= 儲存新檔案 =========
 wb.save(output_file)
