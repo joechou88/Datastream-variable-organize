@@ -75,7 +75,16 @@ def rename_col(col):
     
     return col
 
+# ========= 重新命名欄位 =========
+original_columns = df.columns.tolist()  # 原始欄位
 df = df.rename(columns=rename_col)
+new_columns = df.columns.tolist()       # 新欄位
+
+# ========= 印出前後對照 =========
+print("欄位名稱變動對照：")
+for old, new in zip(original_columns, new_columns):
+    if old != new:
+        print(f"{old} → {new}")
 
 df.to_csv(output_file, index=False)
 print(f"已生成新檔案 '{output_file}'。")
