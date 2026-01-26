@@ -24,7 +24,7 @@
    `./data → ./data-2015-2024`
 
 3. **整合所有國家資料（`country-integrate.py`）**  
-   `./data-2015-2024 → ./all-{國家數量}countries.csv`
+   `./data-2015-2024 → ./all-{國家數量}countries`
 
 4. **重新命名欄位**  
    1. `rename-columns-csv.py`: `./all-{國家數量}countries.csv → ./all-{國家數量}countries-renamed.csv`  
