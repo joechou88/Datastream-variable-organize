@@ -187,6 +187,24 @@ for country, files in country_files.items():
     # ---- 依年份升冪排序 ----
     new_records.sort(key=lambda x: x[0])
 
+    # ---- 取得實際年份範圍 ----
+    years_present = sorted({row[0] for row in new_records})
+
+    min_year = years_present[0]
+    max_year = years_present[-1]
+
+    # ---- 檢查年份是否連續 ----
+    full_range = set(range(min_year, max_year + 1))
+    missing_years = sorted(full_range - set(years_present))
+
+    if missing_years:
+        missing_str = ", ".join(str(y) for y in missing_years)
+        print(
+            f"⚠ 年份不連續｜國家 {country} "
+            f"| 實際年份: {years_present} "
+            f"| 缺少年份: {missing_str}"
+        )
+
     # ---- 輸出主控表 ----
     out_wb = Workbook()
     out_ws = out_wb.active
@@ -197,7 +215,7 @@ for country, files in country_files.items():
         out_ws.append(r)
 
     out_path = os.path.join(
-        OUT_DIR, f"{country}-{START_YEAR}-{END_YEAR}.xlsx"
+        OUT_DIR, f"{country}-{min_year}-{max_year}.xlsx"
     )
     out_wb.save(out_path)
 
