@@ -153,7 +153,7 @@ for country, files in country_files.items():
                             for y, c in year_col_count.items():
                                 print(f"   - {y}: {c-1}")
                             row += 1
-                            continue # 跳回 while True 的開頭，跑下一年
+                            # continue # 跳回 while True 的開頭，跑下一年
                     # ====== 檢查結束 ======
 
                     if header is None:
