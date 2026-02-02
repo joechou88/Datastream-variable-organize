@@ -227,6 +227,19 @@ def update_request_table(out_path, src_path, excel_row):
     ws_out = wb_out["REQUEST_TABLE"]
     ws_src = wb_src["REQUEST_TABLE"]
 
+    # ========= 先檢查 N 欄 (Rows) =========
+    N_COL = 14  # column N
+
+    n_out = ws_out.cell(row=excel_row, column=N_COL).value
+    n_src = ws_src.cell(row=excel_row, column=N_COL).value
+
+    if n_out != n_src:
+        print(
+            f"❌ ROWS 不一致 | "
+            f"{os.path.basename(out_path)} N{excel_row}={n_out} | "
+            f"{os.path.basename(src_path)} N{excel_row}={n_src}"
+        )
+
     for col, label in [(15, "O"), (16, "P")]:
         v_out = ws_out.cell(row=excel_row, column=col).value or 0
         v_src = ws_src.cell(row=excel_row, column=col).value or 0
@@ -355,7 +368,7 @@ def main():
 
                         if is_first_variable:   # A 組變數作為模板，已經在新檔裡，skip
                             continue
-                        
+
                         append_column(
                             out_path=out_xlsx,
                             df=df,
