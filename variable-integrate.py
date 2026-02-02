@@ -181,7 +181,7 @@ def get_sheet_for_year(req_df, year):
     # sheet_ref 形如: 工作表1'!$A$1
     sheet_name = sheet_ref.split("!") [0].replace("'", "")
 
-    return sheet_name, int(expected_rows), int(expected_cols)
+    return sheet_name, int(expected_rows), int(expected_cols), row_idx + 1
 
 def read_variable_data(xls_path, sheet_name):
     """從指定 sheet 讀資料"""
@@ -214,6 +214,33 @@ def append_column(out_path, df, sheet_name):
             ws.cell(row=r_idx, column=c_idx, value=value)
 
     wb.save(out_path)
+
+def update_request_table(out_path, src_path, excel_row):
+    """
+    將 src_path 的 REQUEST_TABLE 中
+    對應 year 的 O/P 欄，加到 out_path 的 REQUEST_TABLE
+    並印出加總過程
+    """
+    wb_out = load_workbook(out_path)
+    wb_src = load_workbook(src_path)
+
+    ws_out = wb_out["REQUEST_TABLE"]
+    ws_src = wb_src["REQUEST_TABLE"]
+
+    for col, label in [(15, "O"), (16, "P")]:
+        v_out = ws_out.cell(row=excel_row, column=col).value or 0
+        v_src = ws_src.cell(row=excel_row, column=col).value or 0
+        new_v = v_out + v_src
+
+        print(
+            f"🧮 {os.path.basename(out_path)} "
+            f"REQUEST_TABLE {label}{excel_row}: "
+            f"{v_out} + {v_src} = {new_v}"
+        )
+
+        ws_out.cell(row=excel_row, column=col, value=new_v)
+
+    wb_out.save(out_path)
 
 def main():
     files = [f for f in os.listdir(DATA_SRC) if f.endswith((".xlsx", ".xlsm"))]
@@ -307,10 +334,8 @@ def main():
                 req_df = read_request_table(src_path)
 
                 for year in range(s, e+1):
-                    if is_first_variable:   # A 組變數作為模板，已經在新檔裡，skip
-                        continue
                     try:
-                        sheet_name, exp_rows, exp_cols = get_sheet_for_year(req_df, year)
+                        sheet_name, exp_rows, exp_cols, excel_row = get_sheet_for_year(req_df, year)
                         df = read_variable_data(src_path, sheet_name)
                         df_rows, df_cols = df.shape  # DataFrame 不含 header，會少一 row
 
@@ -328,12 +353,21 @@ def main():
                         else:
                             print(f"🔹 工作表: {sheet_name}, shape: {exp_rows} rows x {exp_cols} columns")
 
+                        if is_first_variable:   # A 組變數作為模板，已經在新檔裡，skip
+                            continue
+                        
                         append_column(
                             out_path=out_xlsx,
                             df=df,
                             sheet_name=sheet_name
                         )
 
+                        if not is_first_variable:
+                            update_request_table(
+                                out_path=out_xlsx,
+                                src_path=src_path,
+                                excel_row=excel_row
+                            )
                     except Exception as e:
                         print(f"⚠️ ERROR: {e}")
                         skip_country = True
