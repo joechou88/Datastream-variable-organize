@@ -8,6 +8,7 @@
 
 請將 Excel 檔案存放至：
 
+- 分公司 + 分年 + 分變數：`./data-split-by-equity`
 - 分年 + 分變數：`./data-split-by-variable`
 - 分年：`./data`
 
@@ -17,16 +18,19 @@
 
 本工具的資料整合流程如下：
 
-1. **同一國家多個變數合併（`variable-integrate.py`）**  
+1. **同一國家多個公司合併（`equity-integrate.py`）**
+   `./data-split-by-equity → ./data-split-by-variable`
+
+2. **同一國家多個變數合併（`variable-integrate.py`）**  
    `./data-split-by-variable → ./data`
 
-2. **同一國家多年資料合併（`year-integrate.py`）**  
+3. **同一國家多年資料合併（`year-integrate.py`）**  
    `./data → ./data-2015-2024`
 
-3. **整合所有國家資料（`country-integrate.py`）**  
-   `./data-2015-2024 → ./all-{國家數量}countries`
+4. **整合所有國家資料（`country-integrate.py`）**  
+   `./data-2015-2024 → ./all-countries.csv`
 
-4. **重新命名欄位**  
+5. **重新命名欄位**  
    1. `rename-columns-csv.py`: `./all-{國家數量}countries.csv → ./all-{國家數量}countries-renamed.csv`  
    2. `rename-columns-xlsx.py`: `./all-{國家數量}countries.xlsx → ./all-{國家數量}countries-renamed.xlsx`
 
@@ -35,6 +39,14 @@
 ## 輸入檔案命名規則
 
 程式支援 `.xlsm` 與 `.xlsx` 兩種格式。檔案命名規則如下：
+
+### 【分年 + 分變數 + 分公司】（存放於 `./data-split-by-equity`）
+
+- **國家(第幾組公司)-開始年-結束年(第幾組變數)**  
+  - 例：`Germany1-2015-2018A`
+
+- **國家-年分(第幾組變數)**（僅單一年份）  
+  - 例：`Germany1-2015A`
 
 ### 【分年 + 分變數】（存放於 `./data-split-by-variable`）
 
@@ -70,4 +82,4 @@
 
 1. 下載 Workspace（原 Datastream）時，要確保每個國家各年度的變數，最後併起來應一致
 
-2. 【分年 + 分變數】（存放於 `./data-split-by-variable`）合併時，沒有更新 REQUEST_TABLE N 欄的 Rows 數、P 欄的 Total 數，後面的開發者如果要拿這兩欄的值去做其他事，務必要先更新
+2. 【分年 + 分變數】（存放於 `./data-split-by-variable`）合併時，沒有更新 REQUEST_TABLE N 欄的 Rows 數，因為同一國家同一年的 Rows 數可能有些微差異。後面的開發者請避免拿這欄的值去做其他事
