@@ -2,88 +2,54 @@ import os
 import pandas as pd
 import re
 import sys
+import traceback
+import config
+import integrator
 from datetime import datetime
 from collections import defaultdict
 from openpyxl import load_workbook, Workbook
 
-# ========= 基本設定 =========
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.join(BASE_DIR, "data")
-OUT_DIR = os.path.join(BASE_DIR, "data-2015-2024")
-LOG_FILE = f"year_integrate_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-
-START_YEAR = 2015
-END_YEAR = 2024
-
-os.makedirs(OUT_DIR, exist_ok=True)
-
-# 同時印到終端機 + log 檔案
-class Tee:
-    def __init__(self, *files):
-        self.files = files
-    def write(self, obj):
-        for f in self.files:
-            f.write(obj)
-            f.flush()
-    def flush(self):
-        for f in self.files:
-            f.flush()
-
-def parse_years_from_filename(filename):
-    """
-    從檔名擷取合法年份集合
-    Denmark-2014.xlsx -> {2014}
-    Denmark-2015-2017A.xlsm -> {2015, 2016, 2017}
-    """
-    name = os.path.splitext(filename)[0]
-
-    m = re.search(r"-(\d{4})(?:-(\d{4}))?", name)
-    if not m:
-        return set()
-
-    start = int(m.group(1))
-    end = int(m.group(2)) if m.group(2) else start
-
-    return set(range(start, end + 1))
-
-def parse_country(filename):
-    """從檔名擷取國家名稱"""
-    name = os.path.splitext(filename)[0]
-    country = re.sub(r"-\d{4}(-\d{4})?$", "", name)
-    return country
+os.makedirs(config.YEAR_OUTPUT_FOLDER, exist_ok=True)
 
 def extract_sheet_name(ref):
-    """從 K 欄 'Sheet1'!$A$1 抽出 Sheet1"""
     return ref.split("!")[0].replace("'", "")
 
-def main():
-    # ========= 收集各國檔案 =========
+log_file = open(config.YEAR_LOG_FILE, "w", encoding="utf-8")
+
+sys.stdout = integrator.Tee(sys.stdout, log_file)
+sys.stderr = integrator.Tee(sys.stderr, log_file)
+
+print("="*60)
+print("Year Integration Log")
+print("Start Time:", datetime.now())
+print("="*60)
+
+try:
     country_files = defaultdict(list)
 
-    for f in os.listdir(SRC_DIR):
+    for f in os.listdir(config.VARIABLE_OUTPUT_FOLDER):
         if f.lower().endswith((".xlsm", ".xlsx")):
-            country_files[parse_country(f)].append(f)
+            filename = integrator.parse_filename(f)
+            if filename:
+                country_files[filename["country"]].append(f)
 
-    # ---- 讀 country code 對照表 ----
-    code_df = pd.read_excel(os.path.join(BASE_DIR, "country-code.xlsx"))
+    code_df = pd.read_excel(config.COUNTRY_CODE_INPUT)
     code_df["Country_name"] = code_df["Country_name"].str.strip()
 
     country_code_map = code_df.set_index("Country_name").to_dict(orient="index")
 
-    # ========= 主流程 =========
     for country, files in country_files.items():
         print(f"\nProcessing {country}...")
 
-        display_country = country.replace("-", " ") # 取得 COUNTRY 欄
+        country = country.replace("-", " ")
 
-        records = []            # 暫存 某個國家 各年度的資料
+        records = []
         header = None
-        expected_cols = None    # 紀錄該國家應有的欄位數
-        year_col_count = {}     # 紀錄每年欄位數（方便報錯）
+        expected_cols = None
+        year_col_count = {}
 
-        # ---- 掃描該國所有來源檔 ----
         for fname in files:
-            path = os.path.join(SRC_DIR, fname)
+            path = os.path.join(config.VARIABLE_OUTPUT_FOLDER, fname)
             wb = load_workbook(path, data_only=True)
 
             if "REQUEST_TABLE" not in wb.sheetnames:
@@ -96,7 +62,13 @@ def main():
 
             # REQUEST_TABLE 從第 7 列一直往下讀，讀到空白就停
             while True:
-                file_years = parse_years_from_filename(fname)
+                filename = integrator.parse_filename(f)
+                if filename:
+                    start_year = filename["start"]
+                    end_year = filename["end"] if filename["end"] else start_year
+                    file_years = set(range(start_year, end_year + 1))
+                else:
+                    file_years = set()
 
                 year = req_ws[f"G{row}"].value
                 ref = req_ws[f"K{row}"].value
@@ -116,7 +88,7 @@ def main():
                     row += 1
                     continue
 
-                if START_YEAR <= year <= END_YEAR:
+                if config.START_YEAR <= year <= config.END_YEAR:
                     sheet_name = extract_sheet_name(ref)
 
                     if sheet_name in wb.sheetnames:
@@ -186,8 +158,8 @@ def main():
             print(f"  ⚠ {country} 無有效資料，略過")
             continue
 
-        # ---- 加 COUNTRY / COUNTRY_CODE / COUNTRY_CODE2 ----
-        code_info = country_code_map.get(display_country, {"Country_code": "", "Country_code2": ""})
+        # Add country info
+        code_info = country_code_map.get(country, {"Country_code": "", "Country_code2": ""})
         country_code = code_info.get("Country_code", "")
         country_code2 = code_info.get("Country_code2", "")
 
@@ -197,7 +169,7 @@ def main():
         # 調整每筆資料
         new_records = []
         for row in records:
-            new_row = row[:1] + [display_country, country_code, country_code2] + row[1:]
+            new_row = row[:1] + [country, country_code, country_code2] + row[1:]
             new_records.append(new_row)
 
         # ---- 依年份升冪排序 ----
@@ -207,7 +179,7 @@ def main():
         years_present = sorted({row[0] for row in new_records})
 
         # ---- 檢查年份完整性 ----
-        required_years = set(range(START_YEAR, END_YEAR + 1))
+        required_years = set(range(config.START_YEAR, config.END_YEAR + 1))
         missing_required = sorted(required_years - set(years_present))
 
         # ---- 檢查年份連續性 ----
@@ -226,7 +198,6 @@ def main():
             print(msg)
             continue  # 跳過該國家，不輸出
 
-        # ---- 輸出主控表 ----
         out_wb = Workbook()
         out_ws = out_wb.active
         out_ws.title = "MASTER_TABLE"
@@ -236,7 +207,7 @@ def main():
             out_ws.append(r)
 
         out_path = os.path.join(
-            OUT_DIR, f"{country}-{min_year}-{max_year}.xlsx"
+            config.YEAR_OUTPUT_FOLDER, f"{country}-{min_year}-{max_year}.xlsx"
         )
         out_wb.save(out_path)
 
@@ -244,25 +215,12 @@ def main():
 
     print("=== 全部國家彙整完成 ===")
 
-if __name__ == "__main__":
-    # 開啟 log（每次覆寫；若想改成累加，用 "a"）
-    log_f = open(LOG_FILE, "w", encoding="utf-8")
-
-    sys.stdout = Tee(sys.stdout, log_f)
-    sys.stderr = Tee(sys.stderr, log_f)   # 錯誤也寫入 log
-    
+except SystemExit:
+    pass
+except Exception as e:
+    print("\n❌ 系統發生未預期錯誤：")
+    traceback.print_exc()
+finally:
+    print("\nEnd Time:", datetime.now())
     print("="*60)
-    print("Year Integration Log")
-    print("Start Time:", datetime.now())
-    print("="*60)
-
-    try:
-        main()
-    except Exception as e:
-        import traceback
-        print("\n❌ 系統發生未預期錯誤：")
-        traceback.print_exc()
-    finally:
-        print("\nEnd Time:", datetime.now())
-        print("="*60)
-        log_f.close()
+    log_file.close()

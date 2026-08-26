@@ -1,49 +1,25 @@
 import re
 import os
 import sys
+import traceback
 from datetime import datetime
+import config
+import integrator
 from openpyxl import load_workbook
 
-# ================== 設定 ==================
-INPUT_FOLDER = "data-split-by-entity"
-OUTPUT_FOLDER = "data-split-by-variable"
-REQUEST_SHEET = "REQUEST_TABLE"
-LOG_FILE = f"entity_integrate_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+os.makedirs(config.ENTITY_OUTPUT_FOLDER, exist_ok=True)
 
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+log_file = open(config.ENTITY_LOG_FILE, "w", encoding="utf-8")
+sys.stdout = integrator.Tee(sys.stdout, log_file)
+sys.stderr = integrator.Tee(sys.stderr, log_file)
 
-# 同時印到終端機 + log 檔案
-class Tee:
-    def __init__(self, *files):
-        self.files = files
-    def write(self, obj):
-        for f in self.files:
-            f.write(obj)
-            f.flush()
-    def flush(self):
-        for f in self.files:
-            f.flush()
-
-# ================== 檔名解析 ==================
-pattern = re.compile(
-    r"""
-    (?P<country>[A-Za-z]+)
-    (?P<company>\d+)
-    -
-    (?P<start>\d{4})
-    (?:-(?P<end>\d{4}))?
-    (?P<suffix>[A-Za-z]+)
-    """,
-    re.VERBOSE
-)
-
-def parse_filename(fname):
-    name = os.path.splitext(fname)[0]
-    m = pattern.fullmatch(name)
-    return m.groupdict() if m else None
+print("="*60)
+print("Entity Integration Log")
+print("Start Time:", datetime.now())
+print("="*60)
 
 def check_request_table(wb, fname, company_no, start, end):
-    ws = wb[REQUEST_SHEET]
+    ws = wb[config.REQUEST_SHEET]
     expected_series = f"FDEALL{company_no}"
 
     start_year = int(start)
@@ -115,69 +91,37 @@ def get_request_table_value(ws, col, start_row=7):
 
 def validate_wb(wb, fname, company_no, start, end, years):
     # ===== 確定 REQUEST_TABLE 存在 =====
-    if REQUEST_SHEET not in wb.sheetnames:
+    if config.REQUEST_SHEET not in wb.sheetnames:
         raise ValueError(f"{fname} 缺少 REQUEST_TABLE")
     
     # ===== 檢查 檔名和 REQUEST_TABLE 的 Series 一致 =====
     check_request_table(wb, fname, company_no, start, end)
     
     # ===== 檢查 檔名和 工作表數量 一致 =====
-    data_sheets = [s for s in wb.sheetnames if s != REQUEST_SHEET]
+    data_sheets = [s for s in wb.sheetnames if s != config.REQUEST_SHEET]
     if len(data_sheets) < years:
         raise ValueError(
             f"{fname} 工作表數量不足，預期 {years} 張，實際 {len(data_sheets)}"
         )
 
-def print_sheet_shapes(wb, fname, skip_sheet=REQUEST_SHEET):
-    """
-    印出 workbook 每個 sheet 的 shape
-    - wb: Workbook 物件
-    - title: log 標題
-    - skip_sheet: 不印的 sheet 名稱（預設 REQUEST_TABLE）
-    """
+def print_sheet_shapes(wb, fname, skip_sheet=config.REQUEST_SHEET):
     for ws_name in wb.sheetnames:
         if ws_name == skip_sheet:
             continue
         ws = wb[ws_name]
-        rows = actual_rows(ws)
-        cols = actual_cols(ws)
+        rows = integrator.actual_rows(ws)
+        cols = integrator.actual_cols(ws)
         print(f"{fname} 🔹 工作表: {ws_name}, "
               f"shape: {rows} rows x {cols} columns")
 
-def actual_rows(ws):
-    """
-    計算實際有資料的 row 數（忽略尾端空白列）
-    """
-    last = 0
-    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=1):
-        if any(cell is not None for cell in row):
-            last = i
-    return last
-
-def actual_cols(ws):
-    """
-    計算實際有資料的欄位數（忽略尾端空欄）
-    """
-    max_cols = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row:
-            continue
-        # 找最後一個非 None 的 index
-        for i in range(len(row), 0, -1):
-            if row[i-1] is not None:
-                max_cols = max(max_cols, i)
-                break
-    return max_cols
-
-# ================== row append ==================
 def append_sheet_rows(target_ws, source_ws, fname_only, base_cols_by_year, src_cols_by_year, year_idx):
     """
     將 source_ws 的資料接到 target_ws 後面
     - 只允許欄位數一致
     - 不一致時印出警告，但仍跳過 append
     """
-    target_cols = actual_cols(target_ws)
-    source_cols = actual_cols(source_ws)
+    target_cols = integrator.actual_cols(target_ws)
+    source_cols = integrator.actual_cols(source_ws)
 
     if target_cols != source_cols:
         print(
@@ -196,7 +140,7 @@ def append_sheet_rows(target_ws, source_ws, fname_only, base_cols_by_year, src_c
     
     return True
 
-def main():
+try:
     try:
         expected_company_count = int(
             input("🧩 請輸入每個國家預期的公司群數（例如 8）: ").strip()
@@ -208,7 +152,7 @@ def main():
         exit(1)
 
     files = [
-        f for f in os.listdir(INPUT_FOLDER)
+        f for f in os.listdir(config.ENTITY_INPUT_FOLDER)
         if f.endswith((".xlsx", ".xlsm"))
     ]
 
@@ -216,7 +160,7 @@ def main():
     key_to_outname = {}
 
     for f in files:
-        info = parse_filename(f)
+        info = integrator.parse_filename(f)
         if not info:
             continue
         key = (
@@ -236,7 +180,7 @@ def main():
 
     for (country, start, end, suffix) in groups.keys():
         out_name = key_to_outname[(country, start, end, suffix)]
-        out_path = os.path.join(OUTPUT_FOLDER, out_name)
+        out_path = os.path.join(config.ENTITY_OUTPUT_FOLDER, out_name)
 
         if os.path.exists(out_path):
             existing_outputs.append(out_path)
@@ -273,14 +217,13 @@ def main():
                 "missing": missing_companies
             })
 
-        # ===== 嚴格檢查：一定要有 company = 1 作為模板 =====
         if 1 not in companies:
             raise ValueError(
                 f"缺少 company=1，無法合併：{country}-{start}{'-'+end if end else ''}{suffix}"
             )
 
         base_company = 1
-        base_file = os.path.join(INPUT_FOLDER, companies[1])
+        base_file = os.path.join(config.ENTITY_INPUT_FOLDER, companies[1])
 
         wb_base = load_workbook(base_file, data_only=True)
         years = 1 if end is None else int(end) - int(start) + 1
@@ -289,43 +232,40 @@ def main():
         validate_wb(wb_base, base_file, base_company, start, end, years)
         print_sheet_shapes(wb_base, companies[1])
 
-        # ===== 先計入 base company 自己的 rows =====
-        base_sheet_names = [s for s in wb_base.sheetnames if s != REQUEST_SHEET]
+        base_sheet_names = [s for s in wb_base.sheetnames if s != config.REQUEST_SHEET]
 
         for year_idx, ws_name in enumerate(base_sheet_names):
             ws = wb_base[ws_name]
-            rows = actual_rows(ws)
+            rows = integrator.actual_rows(ws)
             merged_rows_by_year[year_idx] += rows + 1
 
         for company in sorted(companies):
             if company == 1:
                 continue
             fname_only = companies[company]
-            fname = os.path.join(INPUT_FOLDER, fname_only)
+            fname = os.path.join(config.ENTITY_INPUT_FOLDER, fname_only)
             wb_src = load_workbook(fname, data_only=True)
 
-            ws_req_base = wb_base[REQUEST_SHEET]
-            ws_req_src = wb_src[REQUEST_SHEET]
+            ws_req_base = wb_base[config.REQUEST_SHEET]
+            ws_req_src = wb_src[config.REQUEST_SHEET]
 
             base_cols_by_year = get_request_table_value(ws_req_base, "O")
             src_cols_by_year = get_request_table_value(ws_req_src, "O")
 
-
             validate_wb(wb_src, fname, company, start, end, years)
 
             for ws_name in wb_base.sheetnames:
-                # 跳過 REQUEST_TABLE
-                if ws_name == REQUEST_SHEET:
+                if ws_name == config.REQUEST_SHEET:
                     continue
 
                 ws_base = wb_base[ws_name]
                 ws_src = wb_src[ws_name]
 
-                rows = actual_rows(ws_src)
-                cols = actual_cols(ws_src)
+                rows = integrator.actual_rows(ws_src)
+                cols = integrator.actual_cols(ws_src)
 
                 year_idx = list(
-                    s for s in wb_base.sheetnames if s != REQUEST_SHEET
+                    s for s in wb_base.sheetnames if s != config.REQUEST_SHEET
                 ).index(ws_name)
 
                 print(
@@ -339,24 +279,23 @@ def main():
                     merged_rows_by_year[year_idx] += rows
 
         out_name = key_to_outname[(country, start, end, suffix)]
-        out_path = os.path.join(OUTPUT_FOLDER, out_name)
+        out_path = os.path.join(config.ENTITY_OUTPUT_FOLDER, out_name)
 
         print(f"\n📊 {out_name} 最終合併後 sheet shape：")
         print_sheet_shapes(wb_base, out_name)
         
-        # ===== 回寫 輸出檔 REQUEST_TABLE N 欄（Rows）=====
-        ws_req = wb_base[REQUEST_SHEET]
-        data_sheets = [s for s in wb_base.sheetnames if s != REQUEST_SHEET]
+        ws_req = wb_base[config.REQUEST_SHEET]
+        data_sheets = [s for s in wb_base.sheetnames if s != config.REQUEST_SHEET]
 
         for i, ws_name in enumerate(data_sheets):
             ws = wb_base[ws_name]
-            rows = actual_rows(ws) + 1       # +1 算 header
-            cols = actual_cols(ws)
+            rows = integrator.actual_rows(ws) + 1
+            cols = integrator.actual_cols(ws)
             total = rows * cols
 
-            ws_req[f"N{7+i}"].value = rows   # Rows
-            ws_req[f"O{7+i}"].value = cols   # Columns
-            ws_req[f"P{7+i}"].value = total  # Total cells
+            ws_req[f"N{7+i}"].value = rows
+            ws_req[f"O{7+i}"].value = cols
+            ws_req[f"P{7+i}"].value = total
 
             print(
                 f"🧮 {out_name} REQUEST_TABLE row {7+i}: "
@@ -378,25 +317,12 @@ def main():
     else:
         print("\n✅ 所有國家公司群數量皆符合預期")
 
-if __name__ == "__main__":
-    # 開啟 log（每次覆寫；若想改成累加，用 "a"）
-    log_f = open(LOG_FILE, "w", encoding="utf-8")
-
-    sys.stdout = Tee(sys.stdout, log_f)
-    sys.stderr = Tee(sys.stderr, log_f)   # 錯誤也寫入 log
-    
+except SystemExit:
+    pass
+except Exception as e:
+    print("\n❌ 系統發生未預期錯誤：")
+    traceback.print_exc()
+finally:
+    print("\nEnd Time:", datetime.now())
     print("="*60)
-    print("Entity Integration Log")
-    print("Start Time:", datetime.now())
-    print("="*60)
-
-    try:
-        main()
-    except Exception as e:
-        import traceback
-        print("\n❌ 系統發生未預期錯誤：")
-        traceback.print_exc()
-    finally:
-        print("\nEnd Time:", datetime.now())
-        print("="*60)
-        log_f.close()
+    log_file.close()

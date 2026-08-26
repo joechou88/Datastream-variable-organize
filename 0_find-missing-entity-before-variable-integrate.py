@@ -1,36 +1,13 @@
 import os
 import re
+import config
+import integrator
 from collections import defaultdict
 from openpyxl import load_workbook
 
-# ==============================
-# 設定
-# ==============================
-
-DATA_DIR = "./data-split-by-variable-all"
 TYPE_COL_INDEX = 0      # A 欄 = Type
 START_ROW = 2           # 第 1 列是表頭
 IGNORE_SHEETS = {"REQUEST_TABLE"}
-
-# ==============================
-# 工具函式
-# ==============================
-
-def parse_filename(filename):
-    """
-    支援：
-    South-Korea-2015A.xlsx
-    South-Korea-2015D.xlsm
-    Switzerland-2015-2018B.xlsx
-    """
-    m = re.match(
-        r"(.+?-\d{4}(?:-\d{4})?)([A-Z]+)\.(xlsx|xlsm)$",
-        filename,
-        re.IGNORECASE
-    )
-    if not m:
-        return None
-    return m.group(1), m.group(2)
 
 
 def read_excel_types(filepath):
@@ -69,18 +46,18 @@ def read_excel_types(filepath):
 # ==============================
 
 def main():
-    files = os.listdir(DATA_DIR)
+    files = os.listdir(config.ENTITY_INPUT_FOLDER)
 
     # group_key -> variable_group -> sheet -> {Type: row}
     data = defaultdict(dict)
 
     for f in files:
-        parsed = parse_filename(f)
+        parsed = integrator.parse_filename(f)
         if not parsed:
             continue
 
         group_key, var_group = parsed
-        path = os.path.join(DATA_DIR, f)
+        path = os.path.join(config.ENTITY_INPUT_FOLDER, f)
 
         print(f"📂 讀取 {f}")
         data[group_key][var_group] = read_excel_types(path)

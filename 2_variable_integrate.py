@@ -1,50 +1,16 @@
 import os
 import re
 import sys
+import traceback
+import config
+import integrator
 from datetime import datetime
 import pandas as pd
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from collections import defaultdict
 
-DATA_SRC = "./data-split-by-variable"
-DATA_OUT = "./data"
-LOG_FILE = f"variable_integrate_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-
-os.makedirs(DATA_OUT, exist_ok=True)
-
-# 同時印到終端機 + log 檔案
-class Tee:
-    def __init__(self, *files):
-        self.files = files
-    def write(self, obj):
-        for f in self.files:
-            f.write(obj)
-            f.flush()
-    def flush(self):
-        for f in self.files:
-            f.flush()
-
-def parse_filename(fname):
-    """
-    解析檔名，例如：
-    Denmark-2015A.xlsx
-    Denmark-2015-2018B.xlsm
-    回傳 (country, year_start, year_end, variable_tag)
-    """
-    name = os.path.splitext(fname)[0]
-    m = re.match(r"(.+?)-(\d{4})(?:-(\d{4}))?([A-Z]+)$", name)
-
-    if not m:
-        return None
-
-    country, y1, y2, vars_ = m.groups()
-    y2 = y2 if y2 else y1
-
-    return [
-        (country, int(y1), int(y2), var, fname)
-        for var in vars_
-    ]
+os.makedirs(config.VARIABLE_OUTPUT_FOLDER, exist_ok=True)
 
 def get_expected_output_files(parsed, country_year_spans):
     outputs = {}  # out_path -> (country, year_label)
@@ -63,7 +29,7 @@ def get_expected_output_files(parsed, country_year_spans):
                 else f"{start_year}-{end_year}"
             )
             fname = f"{country}-{year_label}.xlsx"
-            out_path = os.path.join(DATA_OUT, fname)
+            out_path = os.path.join(config.VARIABLE_OUTPUT_FOLDER, fname)
             outputs[out_path] = (country, year_label)
 
     return outputs
@@ -77,9 +43,9 @@ def create_output_file(country, start_year, end_year):
 
     fname = f"{country}-{year_label}.xlsx"
 
-    out_path = os.path.join(DATA_OUT, fname)
+    out_path = os.path.join(config.VARIABLE_OUTPUT_FOLDER, fname)
     
-    files = [f for f in os.listdir(DATA_SRC) if f.endswith((".xlsx", ".xlsm"))]
+    files = [f for f in os.listdir(config.ENTITY_OUTPUT_FOLDER) if f.endswith((".xlsx", ".xlsm"))]
 
     try:
         template_fname = find_excel_file(country, start_year, "A", files)
@@ -88,7 +54,7 @@ def create_output_file(country, start_year, end_year):
             f"❌ 找不到 {country}-{start_year}A.xlsx 或 .xlsm 作為模板"
         )
 
-    template_path = os.path.join(DATA_SRC, template_fname)
+    template_path = os.path.join(config.ENTITY_OUTPUT_FOLDER, template_fname)
 
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"找不到檔案：{template_path}")
@@ -199,13 +165,12 @@ def get_sheet_for_year(req_df, year):
     return sheet_name, int(expected_rows), int(expected_cols), row_idx + 1
 
 def read_variable_data(xls_path, sheet_name):
-    """從指定 sheet 讀資料"""
     df = pd.read_excel(xls_path, sheet_name=sheet_name, engine="openpyxl")
     return df
 
 def append_column(wb_out, df, sheet_name, variable_suffix):
     """
-    以 A 欄 Type 當 primary key 合併
+    Merge using Type in Column A as the primary key
     """
 
     # 讀取現有 sheet
@@ -339,8 +304,8 @@ def update_request_table(wb_out, src_path, out_path, excel_row, sheet_name):
     # ========= 以合併後 sheet 的實際 shape 更新 =========
     ws_data = wb_out[sheet_name]
 
-    rows = actual_rows(ws_data) + 1  # header 算一列
-    cols = actual_cols(ws_data)
+    rows = integrator.actual_rows(ws_data) + 1  # Count header as a column
+    cols = integrator.actual_cols(ws_data)
     total = rows * cols
 
     ws_out[f"N{excel_row}"].value = rows
@@ -350,37 +315,22 @@ def update_request_table(wb_out, src_path, out_path, excel_row, sheet_name):
     print(f"🧮 更新 REQUEST_TABLE {sheet_name} row {excel_row}: "
           f"N={rows}, O={cols}, P={total}")
 
-def actual_rows(ws):
-    """
-    計算實際有資料的 row 數（忽略尾端空白列）
-    """
-    last = 0
-    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=1):
-        if any(cell is not None for cell in row):
-            last = i
-    return last
+log_file = open(config.VARIABLE_LOG_FILE, "w", encoding="utf-8")
 
-def actual_cols(ws):
-    """
-    計算實際有資料的欄位數（忽略尾端空欄）
-    """
-    max_cols = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row:
-            continue
-        # 找最後一個非 None 的 index
-        for i in range(len(row), 0, -1):
-            if row[i-1] is not None:
-                max_cols = max(max_cols, i)
-                break
-    return max_cols
+sys.stdout = integrator.Tee(sys.stdout, log_file)
+sys.stderr = integrator.Tee(sys.stderr, log_file)
 
-def main():
-    files = [f for f in os.listdir(DATA_SRC) if f.endswith((".xlsx", ".xlsm"))]
+print("="*60)
+print("Variable Integration Log")
+print("Start Time:", datetime.now())
+print("="*60)
+
+try:
+    files = [f for f in os.listdir(config.ENTITY_OUTPUT_FOLDER) if f.endswith((".xlsx", ".xlsm"))]
 
     parsed = []
     for f in files:
-        parsed.extend(parse_filename(f))
+        parsed.extend(integrator.parse_filename(f))
 
     # 依國家 -> 年度 -> 變數排序（A, B, C...）
     grouped = defaultdict(lambda: defaultdict(list))  # country -> year -> list of (var, fname)
@@ -421,7 +371,7 @@ def main():
                     "\n⏭️ 未刪除任何檔案。\n"
                     "請自行至 ./data 刪除欲重新產生的檔案後再執行。"
                 )
-                return
+                sys.exit(0)
 
             else:
                 print("請輸入 y 或 n")
@@ -435,7 +385,7 @@ def main():
         if not is_consistent:
             continue   # 整個國家直接跳過，不輸出
 
-        print(f"\n========== ▶ 開始處理 {country} ==========")
+        print(f"\n========== ▶ Processing {country} ==========")
 
         for start_year, end_year in year_span_list:
             print("\n" + "-" * 40)
@@ -461,7 +411,7 @@ def main():
                     continue  # 否則 Hong-Kong-2015CD 會被併 2 次
                 processed_files.add(fname)  # 標記 Hong-Kong-2015CD 已處理
 
-                src_path = os.path.join(DATA_SRC, fname)
+                src_path = os.path.join(config.ENTITY_OUTPUT_FOLDER, fname)
                 vars_in_file = [v for _, _, v, f in block_files if f == fname]
                 is_first_variable = ("A" in vars_in_file)
                 print(f"📂 處理 {src_path}")
@@ -521,25 +471,12 @@ def main():
 
     print("🎉 所有國家/年度整合完成！")
 
-if __name__ == "__main__":
-    # 開啟 log（每次覆寫；若想改成累加，用 "a"）
-    log_f = open(LOG_FILE, "w", encoding="utf-8")
-
-    sys.stdout = Tee(sys.stdout, log_f)
-    sys.stderr = Tee(sys.stderr, log_f)   # 錯誤也寫入 log
-    
+except SystemExit:
+    pass
+except Exception as e:
+    print("\n❌ 系統發生未預期錯誤：")
+    traceback.print_exc()
+finally:
+    print("\nEnd Time:", datetime.now())
     print("="*60)
-    print("Variable Integration Log")
-    print("Start Time:", datetime.now())
-    print("="*60)
-
-    try:
-        main()
-    except Exception as e:
-        import traceback
-        print("\n❌ 系統發生未預期錯誤：")
-        traceback.print_exc()
-    finally:
-        print("\nEnd Time:", datetime.now())
-        print("="*60)
-        log_f.close()
+    log_file.close()
